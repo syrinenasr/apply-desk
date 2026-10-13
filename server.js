@@ -1,4 +1,4 @@
-// Munich Application Desk — local server.
+// Apply Desk — local server.
 // Zero dependencies: Node's http server, a JSON file for storage, and the
 // Claude Code CLI (`claude -p`) for labeling postings and writing resumes.
 
@@ -80,7 +80,7 @@ function parseJson(text) {
 }
 
 function analyzePrompt(job) {
-  return `You help an English-speaking candidate find jobs in Munich, Germany. Read the job posting and judge whether the candidate can work there in English.
+  return `You help an English-speaking candidate find jobs in Germany. Read the job posting and judge whether the candidate can work there in English.
 
 Reply with ONLY one JSON object of this shape:
 {"title": string, "company": string, "location": string, "postingLanguage": "en" | "de" | "other",
@@ -121,7 +121,7 @@ ${(db.profile.resume || "").slice(0, 20000) || "(not provided)"}`;
 
 function resumePrompt(job) {
   const a = job.analysis || {};
-  return `Rewrite the candidate's base resume so it targets the job below. The candidate is applying in Munich, Germany.
+  return `Rewrite the candidate's base resume so it targets the job below. The candidate is applying for jobs in Germany.
 
 Rules:
 - Write in English.
@@ -596,7 +596,7 @@ const server = http.createServer(async (req, res) => {
 
 await load();
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Munich Application Desk → http://localhost:${PORT}`);
+  console.log(`Apply Desk → http://localhost:${PORT}`);
   console.log(`Data file: ${DB_FILE}`);
 });
 

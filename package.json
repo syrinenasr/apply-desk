@@ -1,9 +1,9 @@
 {
-  "name": "munich-job-desk",
+  "name": "apply-desk",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local job application desk: labels Munich postings by language, tailors your resume with Claude Code, tracks applications.",
+  "description": "Local job application desk: labels job postings in Germany by language, tailors your resume with Claude Code, tracks applications.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test"

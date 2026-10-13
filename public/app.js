@@ -118,7 +118,7 @@ const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); 
 function render() { renderBanner(); renderBase(); renderEval(); renderPipeline(); renderList(); renderDetail(); }
 
 function renderBanner() {
-  $("#banner").innerHTML = S.offline ? `<div class="banner">Can't reach the local server. Start it with <code>npm start</code> in the munich-job-desk folder, then reload.</div>` : "";
+  $("#banner").innerHTML = S.offline ? `<div class="banner">Can't reach the local server. Start it with <code>npm start</code> in the apply-desk folder, then reload.</div>` : "";
 }
 
 function renderBase() {
@@ -479,7 +479,7 @@ async function downloadPdf(j, btn) {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't make the PDF.");
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: cvName(j) + ".pdf" });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("PDF downloaded · also saved in munich-job-desk/resumes");
+    toast("PDF downloaded · also saved in apply-desk/resumes");
   } catch (e) { toast(e.message); }
   btn.disabled = false; btn.textContent = "Download PDF";
 }

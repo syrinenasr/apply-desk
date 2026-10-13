@@ -1,6 +1,6 @@
-# Munich Application Desk
+# Apply Desk
 
-A local web app for job hunting in Munich. Paste a job link and it:
+A local web app for English speakers looking for jobs in Germany. Paste a job link and it:
 
 1. **reads the posting** (LinkedIn, StepStone, Personio, Greenhouse and most career pages),
 2. **labels the language requirement:** *English friendly*, *English OK, German a plus* or *German required*, with the CEFR level the posting asks for (A1–C2),
@@ -36,7 +36,7 @@ public/cv.js   (shared renderer)    ├─ claude -p  → labels jobs and writes
 
 ```sh
 git clone <this repo>
-cd munich-job-desk
+cd apply-desk
 
 # Start Gotenberg once; it restarts with Docker afterwards
 docker run -d --name gotenberg --restart unless-stopped -p 127.0.0.1:3000:3000 gotenberg/gotenberg:8
