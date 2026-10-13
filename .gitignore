@@ -1,0 +1,11 @@
+# Personal data: never commit
+data/
+resumes/
+applied/
+.env
+
+# System and tooling
+.DS_Store
+node_modules/
+*.log
+*.tmp

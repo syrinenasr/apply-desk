@@ -1,0 +1,14 @@
+{
+  "name": "munich-job-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local job application desk: labels Munich postings by language, tailors your resume with Claude Code, tracks applications.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
