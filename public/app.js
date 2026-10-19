@@ -7,6 +7,9 @@ const ENGLISH = { yes: "Language OK", mixed: "Local language a plus", no: "Local
 const MY_LABEL = { yes: "Language OK", mixed: "Local a plus", no: "Local required" };
 const MODE = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work mode not stated" };
 const REMOTE = [["any", "Any work mode"], ["remote", "Remote only"], ["flex", "Remote or hybrid"]];
+// The candidate's two job tracks (analysis.track): the filter's labels and the short chip on each job.
+const TRACKS = [["all", "All tracks"], ["data", "AI, Data & BI"], ["software", "Java, Angular & Software"]];
+const TRACK_CHIP = { data: "AI · Data · BI", software: "Software" };
 const LANG_NAME = { en: "English", de: "German", fr: "French" };
 const RESP = { interview: "Interview invite", rejection: "Rejection", offer: "Offer", other: "Recruiter reply / other" };
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -63,15 +66,17 @@ const placeOf = (j) => {
   return { city: a.city || "", country: a.country || "", mode: a.workMode || "unknown", permit: a.workPermit || "" };
 };
 const placeText = (j) => { const p = placeOf(j); return p.city || p.country ? [p.city, p.country].filter(Boolean).join(", ") : (j.analysis?.location || ""); };
-function inPlace(j, { country = S.country, city = S.city, remote = S.remote } = {}) {
+function inPlace(j, { country = S.country, city = S.city, remote = S.remote, track = S.track } = {}) {
   const p = placeOf(j);
+  if (track !== "all" && j.analysis?.track !== track) return false;
   if (country !== "all" && p.country !== country) return false;
   if (city !== "all" && p.city !== city) return false;
   if (remote === "remote" && p.mode !== "remote") return false;
   if (remote === "flex" && p.mode !== "remote" && p.mode !== "hybrid") return false;
   return true;
 }
-const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any";
+const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any" || S.track !== "all";
+const trackChip = (j) => { const t = j.analysis?.track; return TRACK_CHIP[t] ? `<span class="chip tr-${t}" title="Track: ${esc(TRACKS.find((x) => x[0] === t)[1])}">${TRACK_CHIP[t]}</span>` : ""; };
 // Distinct values with counts, most common first ("" is left out).
 function tally(list, key) {
   const n = {};
@@ -255,10 +260,12 @@ function renderList() {
   const countries = withCur(tally(inStageNow.filter((j) => inPlace(j, { country: "all", city: "all" })), "country"), S.country);
   const cities = withCur(tally(inStageNow.filter((j) => inPlace(j, { city: "all" })), "city"), S.city);
   const remoteN = (r) => inStageNow.filter((j) => inPlace(j, { remote: r })).length;
+  const trackN = (t) => inStageNow.filter((j) => inPlace(j, { track: t })).length;
   const sortBar = `<div class="listbar">
     <div class="lb-row"><label class="label" for="sort-by">Sort</label>
       <select id="sort-by"><option value="match"${S.sort !== "newest" ? " selected" : ""}>Best match (language OK first)</option><option value="newest"${S.sort === "newest" ? " selected" : ""}>Newest first</option></select></div>
     <div class="lb-row lb-filters">
+      <select id="f-track" aria-label="Track">${TRACKS.map(([v, l]) => opt(v, v === "all" ? l : `${l} (${trackN(v)})`, S.track)).join("")}</select>
       ${countries.length > 1 || S.country !== "all" ? `<select id="f-country" aria-label="Country">${opt("all", "All countries", S.country)}${countries.map(([v, n]) => opt(v, `${v} (${n})`, S.country)).join("")}</select>` : ""}
       <select id="f-city" aria-label="City">${opt("all", "All cities", S.city)}${cities.map(([v, n]) => opt(v, `${v} (${n})`, S.city)).join("")}</select>
       <select id="f-remote" aria-label="Work mode">${REMOTE.map(([v, l]) => opt(v, v === "any" ? l : `${l} (${remoteN(v)})`, S.remote)).join("")}</select>
@@ -267,8 +274,8 @@ function renderList() {
   if (!items.length) {
     const stage = esc(STAGES.find((s) => s[0] === S.filter)[1]);
     el.innerHTML = sortBar + rateRow + (placeFiltered() && inStageNow.length
-      ? `<div class="empty"><span>No jobs in “${stage}” match these filters${[S.city !== "all" && S.city, S.country !== "all" && S.country, S.remote !== "any" && REMOTE.find((r) => r[0] === S.remote)[1].toLowerCase()].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}.</span>
-          <div class="row"><button class="btn small" type="button" id="clear-place">Clear location filters</button></div></div>`
+      ? `<div class="empty"><span>No jobs in “${stage}” match these filters${[S.track !== "all" && TRACKS.find((t) => t[0] === S.track)[1], S.city !== "all" && S.city, S.country !== "all" && S.country, S.remote !== "any" && REMOTE.find((r) => r[0] === S.remote)[1].toLowerCase()].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}.</span>
+          <div class="row"><button class="btn small" type="button" id="clear-place">Clear filters</button></div></div>`
       : `<div class="empty">Nothing in “${stage}”.</div>`);
     return;
   }
@@ -284,6 +291,7 @@ function renderList() {
           : hideAi(j) ? `<span class="chip">Label it yourself</span>`
           : j.english ? `<span class="chip dot ${j.english}">${ENGLISH[j.english]}</span>${j.myLabel ? `<span class="chip" title="Labeled by you">✓ you</span>` : ""}` : `<span class="chip">Not labeled</span>`}
         <span class="chip st-${j.status}">${STATUS[j.status] || j.status}</span>
+        ${trackChip(j)}
         ${a.workMode === "remote" || a.workMode === "hybrid" ? `<span class="chip mode-${a.workMode}">${MODE[a.workMode]}</span>` : ""}
         ${yearsInfo(j) && yearsInfo(j).cls ? `<span class="chip ${yearsInfo(j).cls}" title="${esc(yearsInfo(j).text)}">${esc(yearsInfo(j).short)}</span>` : ""}
         ${matchOf(j) !== null ? `<span class="match" title="${j.resumeFit ? "Match of your tailored resume" : "Match of your base resume (no tailored resume yet)"}">${matchOf(j)}${j.resumeFit ? "" : "*"}</span>` : ""}
@@ -439,7 +447,7 @@ Leave an empty line between paragraphs.</pre></details>`
     <div class="panel">
       <div class="detail-head">
         <div class="row" style="justify-content:space-between">
-          <span class="chip st-${j.status}">${STATUS[j.status]}</span>
+          <span class="row" style="gap:6px"><span class="chip st-${j.status}">${STATUS[j.status]}</span>${trackChip(j)}${j.analysis && !TRACK_CHIP[a.track] && !S.busy[j.id] ? `<button class="btn ghost small" data-act="extras" title="Ask Claude for the job's track">Set track</button>` : ""}</span>
           <span class="hint">Added ${esc(fmtDate(j.createdAt))}</span>
         </div>
         <h2>${esc(j.title || a.title || "Untitled posting")}</h2>
@@ -572,7 +580,7 @@ document.addEventListener("click", async (ev) => {
   }
   if (t.id === "eval-close") { $("#eval-panel").hidden = true; return; }
   if (t.id === "check-postings") return checkAllPostings(t);
-  if (t.id === "clear-place") { setPlace({ country: "all", city: "all", remote: "any" }); return; }
+  if (t.id === "clear-place") { setPlace({ country: "all", city: "all", remote: "any", track: "all" }); return; }
   if (t.id === "base-save") {
     const v = $("#base-text").value.trim();
     if (v.length < 200) return toast("That looks too short for a full resume.");
@@ -657,7 +665,7 @@ document.addEventListener("click", async (ev) => {
 
 function setPlace(next) {
   Object.assign(S, next);
-  store.set("mad-country", S.country); store.set("mad-city", S.city); store.set("mad-remote", S.remote);
+  store.set("mad-country", S.country); store.set("mad-city", S.city); store.set("mad-remote", S.remote); store.set("mad-track", S.track);
   renderPipeline(); renderList();
 }
 document.addEventListener("change", (ev) => {
@@ -666,6 +674,7 @@ document.addEventListener("change", (ev) => {
   if (ev.target.id === "f-country") { setPlace({ country: ev.target.value, city: "all" }); return; }
   if (ev.target.id === "f-city") { setPlace({ city: ev.target.value }); return; }
   if (ev.target.id === "f-remote") { setPlace({ remote: ev.target.value }); return; }
+  if (ev.target.id === "f-track") { setPlace({ track: ev.target.value }); return; }
   const id = ev.target.dataset?.status; if (!id) return;
   const status = ev.target.value, j = job(id);
   const data = { status };
@@ -686,7 +695,7 @@ $("#add-form").addEventListener("submit", async (ev) => {
     const j = await api("POST", "/api/jobs", { url, description });
     upsert(j); S.sel = j.id;
     if (S.filter !== "all" && S.filter !== "todo") S.filter = "all";
-    if (placeFiltered()) setPlace({ country: "all", city: "all", remote: "any" });  // a new job has no location yet
+    if (placeFiltered()) setPlace({ country: "all", city: "all", remote: "any", track: "all" });  // a new job has no location or track yet
     $("#job-url").value = ""; $("#job-text").value = "";
     analyze(j.id);
   } catch (e) {
@@ -701,6 +710,7 @@ S.sort = store.get("mad-sort") || "match";
 S.country = store.get("mad-country") || "all";
 S.city = store.get("mad-city") || "all";
 S.remote = REMOTE.some((r) => r[0] === store.get("mad-remote")) ? store.get("mad-remote") : "any";
+S.track = TRACKS.some((t) => t[0] === store.get("mad-track")) ? store.get("mad-track") : "all";
 render();
 (async () => {
   try {

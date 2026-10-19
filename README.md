@@ -4,7 +4,7 @@ A local web app for a job search across countries: Germany, other EU countries, 
 
 1. **reads the posting** (LinkedIn, StepStone, Personio, Greenhouse and most career pages),
 2. **labels the language requirement** against the candidate's languages (English and French fluent, German basic): *Language OK* (workable in English or French), *Local language a plus* or *Local language required* (e.g. fluent German, Dutch, Spanish), with the CEFR level for German postings (A1–C2),
-3. **reads the location:** city, country, work mode (*remote*, *hybrid*, *on-site*, or not stated) and any explicit visa-sponsorship or right-to-work line,
+3. **reads the location:** city, country, work mode (*remote*, *hybrid*, *on-site*, or not stated) and any explicit visa-sponsorship or right-to-work line, and sorts the job into a track: *AI, Data & BI* or *Java, Angular & Software*,
 4. **scores the match** against your base resume and lists the key requirements and keywords,
 5. **writes a tailored, ATS-friendly resume** from your base resume, without inventing experience, and notes the gaps to cover in a cover letter,
 6. **makes an A4 PDF** of every tailored resume automatically,
@@ -15,12 +15,13 @@ Everything runs on your own machine. Your resume and application data never leav
 
 ## Filtering the list
 
-The stage strip (All jobs, To apply, Waiting, ...) picks the stage. Above the list, next to **Sort**, the location filters narrow it further:
+The stage strip (All jobs, To apply, Waiting, ...) picks the stage. Above the list, next to **Sort**, the track and location filters narrow it further:
 
 - **Country** (shown once jobs from more than one country are on the desk) and **City**, each listing the values with their job counts, most common first. Picking a country narrows the city list.
 - **Work mode:** *Any*, *Remote only*, or *Remote or hybrid*.
+- **Track:** *All tracks*, *AI, Data & BI* (data engineering, analytics engineering, BI, data analysis, ML/AI) or *Java, Angular & Software* (backend, full stack, frontend, Java/Spring, Angular). The analysis sets each job's track; a role that mixes both gets the one that matches most of its day-to-day work. Each job shows its track as a chip in the list and on the job page.
 
-The filters combine with the stage and the sort, the stage counts follow them, and the choice is remembered in the browser. Jobs analyzed before this feature can be filled in from the job page (**Check** next to "Location and work mode not checked yet"), which asks Claude only for the missing fields.
+The filters combine with the stage and the sort, the stage counts follow them, and the choice is remembered in the browser. Jobs analyzed before these features can be filled in from the job page (**Check** next to "Location and work mode not checked yet", or **Set track**), which asks Claude only for the missing fields.
 
 ## How it works
 

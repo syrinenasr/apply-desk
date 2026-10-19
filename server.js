@@ -88,6 +88,9 @@ const LOCATION_RULES = `"city": the main city of the job, short, in its common E
 "workMode": "remote" only if the posting says the job is fully remote (working from home or anywhere, no regular office days); "hybrid" if it mixes office and home days or says "flexible/hybrid"; "onsite" if it clearly requires working at the office or a site; "unknown" if the posting doesn't say. Don't guess: a mention of "home office possible" is "hybrid", not "remote".
 "workPermit": "sponsorship offered" if the posting explicitly offers visa sponsorship or relocation help with a work permit; "right to work required" if it explicitly requires an existing right to work / work authorization in that country (or says no sponsorship); else "not mentioned".`;
 
+// The candidate's two job tracks, shared by the analysis and the extras check.
+const TRACK_RULES = `"track": which of the candidate's two job tracks the role belongs to. "data" for AI, data and BI work: data engineer, analytics engineer, BI developer or analyst, data analyst or scientist, ML/AI engineer, Power BI, SQL, ETL and data-warehouse roles. "software" for Java, Angular and general software engineering: backend, full stack, frontend, Java/Spring, Angular, platform or product software. If a role mixes both, pick the one that matches most of the day-to-day work (building data pipelines, models and reports is "data"; building application features, APIs and UIs is "software", even for a data or AI product).`;
+
 function analyzePrompt(job) {
   return `You help a candidate judge job postings. The candidate is based in Munich, Germany, is open to jobs in other cities and countries and to remote work, and speaks: ${CANDIDATE_LANGUAGES}.
 Read the job posting and judge whether the candidate can do this job with those languages.
@@ -96,6 +99,7 @@ Reply with ONLY one JSON object of this shape:
 {"title": string, "company": string, "location": string, "city": string, "country": string,
  "workMode": "remote" | "hybrid" | "onsite" | "unknown",
  "workPermit": "sponsorship offered" | "right to work required" | "not mentioned",
+ "track": "data" | "software",
  "postingLanguage": "en" | "de" | "fr" | "other",
  "english": "yes" | "mixed" | "no",
  "germanRequirement": "not mentioned" | "nice to have" | "required",
@@ -118,6 +122,7 @@ How to set "english" (the language label; the name is kept for compatibility, it
 "otherLanguage": if a language other than English, French or German is required or a plus, its name and level, e.g. "Dutch (fluent)"; else "".
 "reason": 1-2 sentences quoting or citing the posting's own language wording.
 ${LOCATION_RULES}
+${TRACK_RULES}
 "requirements": the 5-8 most important must-haves, each under 12 words, in English.
 "keywords": 8-15 skills, tools and terms an ATS would scan for, in English.
 "fit": 0-100 match between the candidate's resume and the requirements, or null if no resume is given.
@@ -184,7 +189,7 @@ BASE RESUME:
 ${(db.profile.resume || "").slice(0, 30000)}`;
 }
 
-// Fills in fields added after a job was analyzed (experience, GitHub project, location, work mode, work permit),
+// Fills in fields added after a job was analyzed (experience, GitHub project, location, work mode, work permit, track),
 // without touching the language label or scores. Only the missing fields are asked for.
 const LOCATION_KEYS = ["city", "country", "workMode", "workPermit"];
 function missingExtras(a) {
@@ -192,6 +197,7 @@ function missingExtras(a) {
   if (!("requiredYearsMin" in a)) need.push("years");
   if (!a.portfolioProject) need.push("project");
   if (LOCATION_KEYS.some((k) => !(k in a))) need.push("location");
+  if (!TRACKS.includes(a.track)) need.push("track");
   return need;
 }
 
@@ -208,6 +214,10 @@ function extrasPrompt(job, need) {
   if (need.includes("location")) {
     shape.push(`"city": string, "country": string, "workMode": "remote" | "hybrid" | "onsite" | "unknown", "workPermit": "sponsorship offered" | "right to work required" | "not mentioned"`);
     rules.push(LOCATION_RULES);
+  }
+  if (need.includes("track")) {
+    shape.push(`"track": "data" | "software"`);
+    rules.push(TRACK_RULES);
   }
   const resume = need.includes("project") ? `\n\nCANDIDATE RESUME:\n${(db.profile.resume || "").slice(0, 20000)}` : "";
   return `Read the job posting${resume ? " and the candidate's resume" : ""}. Reply with ONLY one JSON object:
@@ -235,6 +245,9 @@ const COUNTRY_ALIASES = { "deutschland": "Germany", "uk": "United Kingdom", "gre
   "usa": "United States", "us": "United States", "united states of america": "United States", "schweiz": "Switzerland", "suisse": "Switzerland" };
 const WORK_MODES = ["remote", "hybrid", "onsite", "unknown"];
 const WORK_PERMITS = ["sponsorship offered", "right to work required", "not mentioned"];
+const TRACKS = ["data", "software"];
+// Fallback when Claude's track answer is missing or unclear: data/BI/AI words in the title win, else software.
+const guessTrack = (title) => (/\b(data\w*|analytics?|analyst|bi|business intelligence|power ?bi|etl|warehouse|ml|machine learning|ai|llm|scientist|reporting)\b/i.test(title || "") ? "data" : "software");
 const shortText = (v, max = 60) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 const cleanCity = (v) => { const c = shortText(v); return CITY_ALIASES[c.toLowerCase()] || c; };
 const cleanCountry = (v) => { const c = shortText(v); return COUNTRY_ALIASES[c.toLowerCase()] || c; };
@@ -256,6 +269,7 @@ function cleanExtras(a) {
   if ("workMode" in a) { const m = String(a.workMode || "").toLowerCase().replace(/[^a-z]/g, ""); out.workMode = WORK_MODES.includes(m) ? m : "unknown"; }
   if ("workPermit" in a) { const w = String(a.workPermit || "").toLowerCase().trim(); out.workPermit = WORK_PERMITS.includes(w) ? w : "not mentioned"; }
   if ("otherLanguage" in a) out.otherLanguage = shortText(a.otherLanguage, 80);
+  if ("track" in a) { const t = String(a.track || "").toLowerCase().trim(); out.track = TRACKS.includes(t) ? t : guessTrack(a.title); }
   return out;
 }
 
@@ -576,7 +590,7 @@ const routes = {
       a.requirements = Array.isArray(a.requirements) ? a.requirements.map(String) : [];
       a.keywords = Array.isArray(a.keywords) ? a.keywords.map(String) : [];
       a.fit = typeof a.fit === "number" ? a.fit : null;
-      Object.assign(a, { city: "", country: "", workMode: "unknown", workPermit: "not mentioned", otherLanguage: "" }, cleanExtras(a));
+      Object.assign(a, { city: "", country: "", workMode: "unknown", workPermit: "not mentioned", otherLanguage: "", track: guessTrack(a.title) }, cleanExtras(a));
       if (!("requiredYearsMin" in a)) Object.assign(a, { requiredYearsMin: null, requiredYearsMax: null });
       // The AI's answer stays in analysis.english for the evaluation; your own label, if set, still decides.
       Object.assign(job, { analysis: a, english: job.myLabel || a.english, title: String(a.title || ""), company: String(a.company || ""), analyzedAt: Date.now() });
@@ -614,7 +628,11 @@ const routes = {
     try {
       const need = missingExtras(job.analysis);
       if (!need.length) return job;
-      Object.assign(job.analysis, cleanExtras(parseJson(await askClaude(extrasPrompt(job, need)))));
+      const got = parseJson(await askClaude(extrasPrompt(job, need)));
+      if ("track" in got) got.title = job.title || job.analysis.title;  // for the fallback guess only
+      const clean = cleanExtras(got);
+      if (!need.includes("track")) delete clean.track;
+      Object.assign(job.analysis, clean);
       job.analysis.extrasAt = Date.now();
       await persist();
       return job;

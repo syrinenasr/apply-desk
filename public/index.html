@@ -28,6 +28,7 @@ html, body { margin: 0; }
   --warn: #9A5300; --warn-soft: #FFEBD6;
   --bad: #B8233F; --bad-soft: #FCE0E6;
   --glow-a: #FFD6E7; --glow-b: #EBDDFF;
+  --trk-data: #1D5F8A; --trk-data-soft: #DDEDF8; --trk-sw: #6A3FB0; --trk-sw-soft: #EEE5FF;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Nunito", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "DM Mono", ui-monospace, Menlo, monospace;
@@ -39,6 +40,7 @@ html, body { margin: 0; }
     --accent: #FF7EB3; --accent-soft: #4A1E3A; --accent-ink: #2A0B1D; --signal: #B79AF0; --signal-ink: #1E0E3D;
     --ok: #6ED3A6; --ok-soft: #173326; --warn: #F2B266; --warn-soft: #3D2810; --bad: #FF8197; --bad-soft: #43172A;
     --glow-a: #3A1530; --glow-b: #2A1A42;
+    --trk-data: #8FCBF2; --trk-data-soft: #15293A; --trk-sw: #CDB2FF; --trk-sw-soft: #2C1D47;
     color-scheme: dark;
   }
 }
@@ -47,6 +49,7 @@ html, body { margin: 0; }
   --accent: #FF7EB3; --accent-soft: #4A1E3A; --accent-ink: #2A0B1D; --signal: #B79AF0; --signal-ink: #1E0E3D;
   --ok: #6ED3A6; --ok-soft: #173326; --warn: #F2B266; --warn-soft: #3D2810; --bad: #FF8197; --bad-soft: #43172A;
   --glow-a: #3A1530; --glow-b: #2A1A42;
+  --trk-data: #8FCBF2; --trk-data-soft: #15293A; --trk-sw: #CDB2FF; --trk-sw-soft: #2C1D47;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -130,6 +133,8 @@ textarea { resize: vertical; line-height: 1.45; }
 .listbar select { width: auto; flex: 1 1 0; min-width: 0; padding: 5px 8px; font-size: 13px; }
 .lb-filters select { flex: 1 1 110px; }
 .chip.mode-remote { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.chip.tr-data { background: var(--trk-data-soft); color: var(--trk-data); }
+.chip.tr-software { background: var(--trk-sw-soft); color: var(--trk-sw); }
 .chip.mode-hybrid { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
 .match { margin-left: auto; font-family: var(--font-display); font-weight: 600; font-size: 17px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .empty { padding: 22px 18px; display: grid; gap: 10px; color: var(--muted); }
