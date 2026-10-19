@@ -1,7 +1,7 @@
 // Evaluation: how often does the AI's language label agree with yours?
 // Used by the Evaluation panel in the browser and by test/eval.test.js.
 
-export const LABELS = ["yes", "mixed", "no"]; // English friendly · English OK, German a plus · German required
+export const LABELS = ["yes", "mixed", "no"]; // Language OK (English/French) · Local language a plus · Local language required
 
 // The jobs you have labeled yourself, each paired with the AI's label.
 export function labelPairs(jobs) {

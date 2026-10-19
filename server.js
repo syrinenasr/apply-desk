@@ -79,14 +79,28 @@ function parseJson(text) {
   return JSON.parse(body);
 }
 
+// What the candidate speaks at working level. The language label asks: can the candidate do this job with these?
+const CANDIDATE_LANGUAGES = "English (fluent), French (fluent), Arabic (native), German (basic)";
+
+// Location, work mode and work-permit rules, shared by the analysis and the extras check.
+const LOCATION_RULES = `"city": the main city of the job, short, in its common English name ("Munich", "Cologne", "Zurich", "Montreal", "Brussels"). Use the city itself, not a metro area ("Greater Munich Metropolitan Area" → "Munich"); for a town next to a big city use the town ("Garching"). If several cities are listed, the first one. If the job is fully remote with no city, or no city is given, "".
+"country": the country of that city in English ("Germany", "France", "United Kingdom", "United States", "Switzerland"); for a remote job with no city, the country or region it is open to if one is named ("Germany", "EU"), else "".
+"workMode": "remote" only if the posting says the job is fully remote (working from home or anywhere, no regular office days); "hybrid" if it mixes office and home days or says "flexible/hybrid"; "onsite" if it clearly requires working at the office or a site; "unknown" if the posting doesn't say. Don't guess: a mention of "home office possible" is "hybrid", not "remote".
+"workPermit": "sponsorship offered" if the posting explicitly offers visa sponsorship or relocation help with a work permit; "right to work required" if it explicitly requires an existing right to work / work authorization in that country (or says no sponsorship); else "not mentioned".`;
+
 function analyzePrompt(job) {
-  return `You help an English-speaking candidate find jobs in Germany. Read the job posting and judge whether the candidate can work there in English.
+  return `You help a candidate judge job postings. The candidate is based in Munich, Germany, is open to jobs in other cities and countries and to remote work, and speaks: ${CANDIDATE_LANGUAGES}.
+Read the job posting and judge whether the candidate can do this job with those languages.
 
 Reply with ONLY one JSON object of this shape:
-{"title": string, "company": string, "location": string, "postingLanguage": "en" | "de" | "other",
+{"title": string, "company": string, "location": string, "city": string, "country": string,
+ "workMode": "remote" | "hybrid" | "onsite" | "unknown",
+ "workPermit": "sponsorship offered" | "right to work required" | "not mentioned",
+ "postingLanguage": "en" | "de" | "fr" | "other",
  "english": "yes" | "mixed" | "no",
  "germanRequirement": "not mentioned" | "nice to have" | "required",
  "germanLevel": "none" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "native" | "unspecified",
+ "otherLanguage": string,
  "reason": string,
  "requirements": string[],
  "keywords": string[],
@@ -96,18 +110,21 @@ Reply with ONLY one JSON object of this shape:
  "requiredYearsMax": number | null,
  "portfolioProject": {"title": string, "description": string}}
 
-How to set "english":
-- "yes": the working language is English and German is not mentioned, or explicitly not needed.
-- "mixed": English is enough to do the job, but German is listed as a plus, or only basic German (A1-B1) is asked for.
-- "no": fluent, business-level, or B2+ German is required; or the posting is written in German and gives no sign that English alone is enough.
+How to set "english" (the language label; the name is kept for compatibility, it covers every language):
+- "yes": the job can be done in English, French or Arabic (the candidate's fluent languages), and no other language is required. A French-speaking job that needs fluent French is "yes".
+- "mixed": English or French is enough to do the job, but the local language (German, Dutch, Spanish, ...) is listed as a plus, or only basic German (A1-B1) is asked for.
+- "no": the job requires a language the candidate doesn't have at working level: e.g. fluent, business-level or B2+ German, or fluent Dutch, Spanish, Italian...; or the posting is written in such a language and gives no sign that English or French alone is enough.
+"germanRequirement" / "germanLevel": what the posting asks for German specifically ("not mentioned" and "none" if it doesn't mention German).
+"otherLanguage": if a language other than English, French or German is required or a plus, its name and level, e.g. "Dutch (fluent)"; else "".
 "reason": 1-2 sentences quoting or citing the posting's own language wording.
+${LOCATION_RULES}
 "requirements": the 5-8 most important must-haves, each under 12 words, in English.
 "keywords": 8-15 skills, tools and terms an ATS would scan for, in English.
 "fit": 0-100 match between the candidate's resume and the requirements, or null if no resume is given.
 "fitNotes": 1-3 sentences naming the strongest matches and the clearest gaps; "" if no resume.
 "requiredYearsMin" / "requiredYearsMax": the years of professional experience the posting asks for, as numbers ("3+ years" → 3 and null; "2-5 years" → 2 and 5; "at least 5" → 5 and null). If the posting states no number of years, both are null; do not guess from words like "senior".
 "portfolioProject": one GitHub portfolio project the candidate could build in 2-4 weekends to close this job's biggest skill gap, using the posting's tools where possible. "title": a short project title (under 10 words). "description": one sentence on what it does and which tools it uses.
-Write every string in English, even if the posting is German.
+Write every string in English, even if the posting is in another language.
 Refer to the candidate as "the candidate", never with gendered pronouns.
 
 Job link: ${job.url || "(none)"}
@@ -121,7 +138,7 @@ ${(db.profile.resume || "").slice(0, 20000) || "(not provided)"}`;
 
 function resumePrompt(job) {
   const a = job.analysis || {};
-  return `Rewrite the candidate's base resume so it targets the job below. The candidate is applying for jobs in Germany.
+  return `Rewrite the candidate's base resume so it targets the job below. The candidate is applying for this job in ${a.country || "the country of the job"}${a.workMode === "remote" ? " (a remote role)" : ""}.
 
 Rules:
 - Write in English.
@@ -167,31 +184,79 @@ BASE RESUME:
 ${(db.profile.resume || "").slice(0, 30000)}`;
 }
 
-// Adds only the experience requirement and a portfolio-project idea, without touching the label or scores.
-function extrasPrompt(job) {
-  return `Read the job posting and the candidate's resume. Reply with ONLY one JSON object:
-{"requiredYearsMin": number | null,
- "requiredYearsMax": number | null,
- "portfolioProject": {"title": string, "description": string}}
-"requiredYearsMin" / "requiredYearsMax": the years of professional experience the posting asks for, as numbers ("3+ years" → 3 and null; "2-5 years" → 2 and 5; "at least 5" → 5 and null). If the posting states no number of years, both are null; do not guess from words like "senior".
-"portfolioProject": one GitHub portfolio project the candidate could build in 2-4 weekends to close this job's biggest skill gap, using the posting's tools where possible. "title": a short project title (under 10 words). "description": one sentence on what it does and which tools it uses.
-Write every string in English.
-
-JOB POSTING:
-${(job.description || "").slice(0, 30000)}
-
-CANDIDATE RESUME:
-${(db.profile.resume || "").slice(0, 20000)}`;
+// Fills in fields added after a job was analyzed (experience, GitHub project, location, work mode, work permit),
+// without touching the language label or scores. Only the missing fields are asked for.
+const LOCATION_KEYS = ["city", "country", "workMode", "workPermit"];
+function missingExtras(a) {
+  const need = [];
+  if (!("requiredYearsMin" in a)) need.push("years");
+  if (!a.portfolioProject) need.push("project");
+  if (LOCATION_KEYS.some((k) => !(k in a))) need.push("location");
+  return need;
 }
 
+function extrasPrompt(job, need) {
+  const shape = [], rules = [];
+  if (need.includes("years")) {
+    shape.push(`"requiredYearsMin": number | null, "requiredYearsMax": number | null`);
+    rules.push(`"requiredYearsMin" / "requiredYearsMax": the years of professional experience the posting asks for, as numbers ("3+ years" → 3 and null; "2-5 years" → 2 and 5; "at least 5" → 5 and null). If the posting states no number of years, both are null; do not guess from words like "senior".`);
+  }
+  if (need.includes("project")) {
+    shape.push(`"portfolioProject": {"title": string, "description": string}`);
+    rules.push(`"portfolioProject": one GitHub portfolio project the candidate could build in 2-4 weekends to close this job's biggest skill gap, using the posting's tools where possible. "title": a short project title (under 10 words). "description": one sentence on what it does and which tools it uses.`);
+  }
+  if (need.includes("location")) {
+    shape.push(`"city": string, "country": string, "workMode": "remote" | "hybrid" | "onsite" | "unknown", "workPermit": "sponsorship offered" | "right to work required" | "not mentioned"`);
+    rules.push(LOCATION_RULES);
+  }
+  const resume = need.includes("project") ? `\n\nCANDIDATE RESUME:\n${(db.profile.resume || "").slice(0, 20000)}` : "";
+  return `Read the job posting${resume ? " and the candidate's resume" : ""}. Reply with ONLY one JSON object:
+{${shape.join(",\n ")}}
+${rules.join("\n")}
+Write every string in English.
+
+Job link: ${job.url || "(none)"}
+Location given in an earlier reading: ${job.analysis?.location || "(none)"}
+
+JOB POSTING:
+${(job.description || "").slice(0, 30000)}${resume}`;
+}
+
+// English names for cities that postings often give in the local language.
+const CITY_ALIASES = {
+  "münchen": "Munich", "munchen": "Munich", "muenchen": "Munich", "greater munich metropolitan area": "Munich",
+  "köln": "Cologne", "koeln": "Cologne", "nürnberg": "Nuremberg", "nuernberg": "Nuremberg",
+  "frankfurt am main": "Frankfurt", "frankfurt a. m.": "Frankfurt", "frankfurt/main": "Frankfurt",
+  "hannover": "Hanover", "zürich": "Zurich", "genève": "Geneva", "geneve": "Geneva", "genf": "Geneva",
+  "montréal": "Montreal", "bruxelles": "Brussels", "brussel": "Brussels", "wien": "Vienna", "lisboa": "Lisbon",
+  "garching bei münchen": "Garching", "garching bei munchen": "Garching",
+};
+const COUNTRY_ALIASES = { "deutschland": "Germany", "uk": "United Kingdom", "great britain": "United Kingdom", "england": "United Kingdom",
+  "usa": "United States", "us": "United States", "united states of america": "United States", "schweiz": "Switzerland", "suisse": "Switzerland" };
+const WORK_MODES = ["remote", "hybrid", "onsite", "unknown"];
+const WORK_PERMITS = ["sponsorship offered", "right to work required", "not mentioned"];
+const shortText = (v, max = 60) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+const cleanCity = (v) => { const c = shortText(v); return CITY_ALIASES[c.toLowerCase()] || c; };
+const cleanCountry = (v) => { const c = shortText(v); return COUNTRY_ALIASES[c.toLowerCase()] || c; };
+
+// Only the keys the answer actually contains, cleaned; so an extras call never blanks a field it wasn't asked for.
 function cleanExtras(a) {
   const num = (v) => (typeof v === "number" && v >= 0 && v <= 30 ? v : null);
-  const p = a.portfolioProject && typeof a.portfolioProject === "object" ? a.portfolioProject : null;
-  return {
-    requiredYearsMin: num(a.requiredYearsMin),
-    requiredYearsMax: num(a.requiredYearsMax),
-    portfolioProject: p && p.title ? { title: String(p.title), description: String(p.description || "") } : null,
-  };
+  const out = {};
+  if ("requiredYearsMin" in a || "requiredYearsMax" in a) {
+    out.requiredYearsMin = num(a.requiredYearsMin);
+    out.requiredYearsMax = num(a.requiredYearsMax);
+  }
+  if ("portfolioProject" in a) {
+    const p = a.portfolioProject && typeof a.portfolioProject === "object" ? a.portfolioProject : null;
+    out.portfolioProject = p && p.title ? { title: String(p.title), description: String(p.description || "") } : null;
+  }
+  if ("city" in a) out.city = cleanCity(a.city);
+  if ("country" in a) out.country = cleanCountry(a.country);
+  if ("workMode" in a) { const m = String(a.workMode || "").toLowerCase().replace(/[^a-z]/g, ""); out.workMode = WORK_MODES.includes(m) ? m : "unknown"; }
+  if ("workPermit" in a) { const w = String(a.workPermit || "").toLowerCase().trim(); out.workPermit = WORK_PERMITS.includes(w) ? w : "not mentioned"; }
+  if ("otherLanguage" in a) out.otherLanguage = shortText(a.otherLanguage, 80);
+  return out;
 }
 
 // Scores the TAILORED resume (what you'd actually send) against the posting, on the same 0-100 scale as the analysis.
@@ -511,7 +576,8 @@ const routes = {
       a.requirements = Array.isArray(a.requirements) ? a.requirements.map(String) : [];
       a.keywords = Array.isArray(a.keywords) ? a.keywords.map(String) : [];
       a.fit = typeof a.fit === "number" ? a.fit : null;
-      Object.assign(a, cleanExtras(a));
+      Object.assign(a, { city: "", country: "", workMode: "unknown", workPermit: "not mentioned", otherLanguage: "" }, cleanExtras(a));
+      if (!("requiredYearsMin" in a)) Object.assign(a, { requiredYearsMin: null, requiredYearsMax: null });
       // The AI's answer stays in analysis.english for the evaluation; your own label, if set, still decides.
       Object.assign(job, { analysis: a, english: job.myLabel || a.english, title: String(a.title || ""), company: String(a.company || ""), analyzedAt: Date.now() });
       await persist();
@@ -546,7 +612,10 @@ const routes = {
     if (busy.has(id)) throw Object.assign(new Error("Already working on this job."), { status: 409 });
     busy.add(id);
     try {
-      Object.assign(job.analysis, cleanExtras(parseJson(await askClaude(extrasPrompt(job)))));
+      const need = missingExtras(job.analysis);
+      if (!need.length) return job;
+      Object.assign(job.analysis, cleanExtras(parseJson(await askClaude(extrasPrompt(job, need)))));
+      job.analysis.extrasAt = Date.now();
       await persist();
       return job;
     } catch (e) { throw e instanceof SyntaxError ? new Error("The answer came back malformed. Try again.") : e; }

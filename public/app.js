@@ -2,7 +2,12 @@ import { esc, md, cvName } from "./cv.js";
 import { LABELS, labelPairs, scoreLabels } from "./eval.js";
 
 const STATUS = { new: "To apply", applied: "Applied", interview: "Interviewing", offer: "Offer", rejected: "Rejected", skipped: "Skipped", closed: "Posting closed" };
-const ENGLISH = { yes: "English friendly", mixed: "English OK, German a plus", no: "German required" };
+// The language label: can the candidate do the job in English or French? (Values stay yes/mixed/no for older jobs.)
+const ENGLISH = { yes: "Language OK", mixed: "Local language a plus", no: "Local language required" };
+const MY_LABEL = { yes: "Language OK", mixed: "Local a plus", no: "Local required" };
+const MODE = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work mode not stated" };
+const REMOTE = [["any", "Any work mode"], ["remote", "Remote only"], ["flex", "Remote or hybrid"]];
+const LANG_NAME = { en: "English", de: "German", fr: "French" };
 const RESP = { interview: "Interview invite", rejection: "Rejection", offer: "Offer", other: "Recruiter reply / other" };
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const STAGES = [
@@ -52,6 +57,27 @@ async function patch(id, data) {
 }
 
 /* ---------- derived ---------- */
+// Location from the analysis: city, country, work mode ("" / "unknown" when not known yet).
+const placeOf = (j) => {
+  const a = j.analysis || {};
+  return { city: a.city || "", country: a.country || "", mode: a.workMode || "unknown", permit: a.workPermit || "" };
+};
+const placeText = (j) => { const p = placeOf(j); return p.city || p.country ? [p.city, p.country].filter(Boolean).join(", ") : (j.analysis?.location || ""); };
+function inPlace(j, { country = S.country, city = S.city, remote = S.remote } = {}) {
+  const p = placeOf(j);
+  if (country !== "all" && p.country !== country) return false;
+  if (city !== "all" && p.city !== city) return false;
+  if (remote === "remote" && p.mode !== "remote") return false;
+  if (remote === "flex" && p.mode !== "remote" && p.mode !== "hybrid") return false;
+  return true;
+}
+const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any";
+// Distinct values with counts, most common first ("" is left out).
+function tally(list, key) {
+  const n = {};
+  for (const j of list) { const v = placeOf(j)[key]; if (v) n[v] = (n[v] || 0) + 1; }
+  return Object.entries(n).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
+}
 const isClosed = (j) => j.status === "rejected" || j.status === "skipped" || j.status === "closed";
 function inStage(j, f) {
   switch (f) {
@@ -78,6 +104,19 @@ function ago(t) {
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+}
+// City, country, work mode and any work-permit note, under the job title.
+function placeLine(j) {
+  const a = j.analysis || {}, p = placeOf(j);
+  if (!j.analysis) return "";
+  if (!("workMode" in a)) return `<div class="row" style="gap:6px"><span class="hint">Location and work mode not checked yet.</span>${S.busy[j.id] ? "" : `<button class="btn ghost small" data-act="extras">Check</button>`}</div>`;
+  const where = [p.city, p.country].filter(Boolean).join(", ");
+  const permit = p.permit === "sponsorship offered" ? `<span class="chip yes" title="The posting offers visa sponsorship">Visa sponsorship offered</span>`
+    : p.permit === "right to work required" ? `<span class="chip no" title="The posting asks for an existing right to work there">Right to work required</span>` : "";
+  return `<div class="row place" style="gap:6px">
+    ${where ? `<span class="chip" title="Location">${esc(where)}</span>` : ""}
+    <span class="chip ${p.mode === "remote" || p.mode === "hybrid" ? `mode-${p.mode}` : ""}">${MODE[p.mode] || MODE.unknown}</span>
+    ${permit}</div>`;
 }
 function postingLine(j) {
   const p = j.posting || {};
@@ -172,7 +211,7 @@ function renderEval() {
       <h2>Evaluation: AI label vs. yours</h2>
       <span class="hint">${pairs.length} of ${analyzed} analyzed jobs labeled by you${pairs.length < 30 ? ` · aim for 30` : ""}</span>
     </div>
-    <p class="hint">For each job you label yourself, the desk compares your judgment with the AI's original label. Label a mix of English, German and unclear postings for a fair score.</p>
+    <p class="hint">For each job you label yourself, the desk compares your judgment with the AI's original label. Label a mix of English-, French- and local-language postings, and some unclear ones, for a fair score.</p>
     <label class="row" style="gap:8px;cursor:pointer"><input type="checkbox" id="blind-mode"${S.blind ? " checked" : ""}>
       <span><b>Blind labeling:</b> hide the AI's label on jobs I haven't labeled yet</span></label>
     ${result}
@@ -186,7 +225,7 @@ function stats() {
 }
 
 function renderPipeline() {
-  const counts = Object.fromEntries(STAGES.map(([k]) => [k, S.jobs.filter((j) => inStage(j, k)).length]));
+  const counts = Object.fromEntries(STAGES.map(([k]) => [k, S.jobs.filter((j) => inStage(j, k) && inPlace(j)).length]));
   $("#pipeline").innerHTML = STAGES.map(([k, l]) => `
     <button type="button" class="stage" data-filter="${k}" aria-pressed="${S.filter === k}">
       <span class="n">${counts[k]}</span><span class="l">${l}</span>
@@ -202,28 +241,50 @@ function renderList() {
       <ol>
         <li>Check your <strong>base resume</strong> is saved.</li>
         <li>Paste a job link above and click <strong>Analyze job</strong>.</li>
-        <li>English-friendly jobs get a tailored resume. Click <strong>Mark as applied</strong> when you send it, and log replies as they come in.</li>
+        <li>Jobs you can do in English or French get a tailored resume. Click <strong>Mark as applied</strong> when you send it, and log replies as they come in.</li>
       </ol></div>`;
     return;
   }
   const { applied, replied, rate } = stats();
   const rateRow = applied ? `<div class="item" style="cursor:default"><span class="rate"><b>${applied}</b> applied · <b>${replied}</b> replied · <b>${rate}%</b> response rate</span></div>` : "";
-  const items = sortJobs(S.jobs.filter((j) => inStage(j, S.filter)));
-  const sortBar = `<div class="listbar"><label class="label" for="sort-by">Sort</label>
-    <select id="sort-by"><option value="match"${S.sort !== "newest" ? " selected" : ""}>Best match (English-friendly first)</option><option value="newest"${S.sort === "newest" ? " selected" : ""}>Newest first</option></select></div>`;
-  if (!items.length) { el.innerHTML = sortBar + rateRow + `<div class="empty">Nothing in “${esc(STAGES.find((s) => s[0] === S.filter)[1])}”.</div>`; return; }
+  const inStageNow = S.jobs.filter((j) => inStage(j, S.filter));
+  const items = sortJobs(inStageNow.filter((j) => inPlace(j)));
+  // Each filter's options count the jobs the other filters leave, so the numbers match what you'd see.
+  const opt = (v, label, cur) => `<option value="${esc(v)}"${cur === v ? " selected" : ""}>${esc(label)}</option>`;
+  const withCur = (rows, cur) => (cur !== "all" && !rows.some(([v]) => v === cur) ? [...rows, [cur, 0]] : rows);
+  const countries = withCur(tally(inStageNow.filter((j) => inPlace(j, { country: "all", city: "all" })), "country"), S.country);
+  const cities = withCur(tally(inStageNow.filter((j) => inPlace(j, { city: "all" })), "city"), S.city);
+  const remoteN = (r) => inStageNow.filter((j) => inPlace(j, { remote: r })).length;
+  const sortBar = `<div class="listbar">
+    <div class="lb-row"><label class="label" for="sort-by">Sort</label>
+      <select id="sort-by"><option value="match"${S.sort !== "newest" ? " selected" : ""}>Best match (language OK first)</option><option value="newest"${S.sort === "newest" ? " selected" : ""}>Newest first</option></select></div>
+    <div class="lb-row lb-filters">
+      ${countries.length > 1 || S.country !== "all" ? `<select id="f-country" aria-label="Country">${opt("all", "All countries", S.country)}${countries.map(([v, n]) => opt(v, `${v} (${n})`, S.country)).join("")}</select>` : ""}
+      <select id="f-city" aria-label="City">${opt("all", "All cities", S.city)}${cities.map(([v, n]) => opt(v, `${v} (${n})`, S.city)).join("")}</select>
+      <select id="f-remote" aria-label="Work mode">${REMOTE.map(([v, l]) => opt(v, v === "any" ? l : `${l} (${remoteN(v)})`, S.remote)).join("")}</select>
+    </div>
+  </div>`;
+  if (!items.length) {
+    const stage = esc(STAGES.find((s) => s[0] === S.filter)[1]);
+    el.innerHTML = sortBar + rateRow + (placeFiltered() && inStageNow.length
+      ? `<div class="empty"><span>No jobs in “${stage}” match these filters${[S.city !== "all" && S.city, S.country !== "all" && S.country, S.remote !== "any" && REMOTE.find((r) => r[0] === S.remote)[1].toLowerCase()].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}.</span>
+          <div class="row"><button class="btn small" type="button" id="clear-place">Clear location filters</button></div></div>`
+      : `<div class="empty">Nothing in “${stage}”.</div>`);
+    return;
+  }
   el.innerHTML = sortBar + rateRow + items.map((j) => {
     const a = j.analysis || {};
     const age = j.status === "applied" ? daysSince(j.appliedAt) : null;
     const late = age !== null && age >= 14 && !(j.responses || []).length;
     return `<button type="button" class="item" data-sel="${j.id}" aria-current="${S.sel === j.id}" style="--stripe:${stripe(j)}">
       <span class="t">${esc(j.title || a.title || "Untitled posting")}</span>
-      <span class="c">${esc([j.company || a.company, a.location].filter(Boolean).join(" · ") || hostOf(j.url) || "Company unknown")}</span>
+      <span class="c">${esc([j.company || a.company, placeText(j)].filter(Boolean).join(" · ") || hostOf(j.url) || "Company unknown")}</span>
       <span class="meta">
         ${S.busy[j.id] ? `<span class="thinking" style="font-size:12px">${S.busy[j.id] === "analyzing" ? "Analyzing" : S.busy[j.id] === "scoring" ? "Scoring" : "Writing resume"}</span>`
           : hideAi(j) ? `<span class="chip">Label it yourself</span>`
           : j.english ? `<span class="chip dot ${j.english}">${ENGLISH[j.english]}</span>${j.myLabel ? `<span class="chip" title="Labeled by you">✓ you</span>` : ""}` : `<span class="chip">Not labeled</span>`}
         <span class="chip st-${j.status}">${STATUS[j.status] || j.status}</span>
+        ${a.workMode === "remote" || a.workMode === "hybrid" ? `<span class="chip mode-${a.workMode}">${MODE[a.workMode]}</span>` : ""}
         ${yearsInfo(j) && yearsInfo(j).cls ? `<span class="chip ${yearsInfo(j).cls}" title="${esc(yearsInfo(j).text)}">${esc(yearsInfo(j).short)}</span>` : ""}
         ${matchOf(j) !== null ? `<span class="match" title="${j.resumeFit ? "Match of your tailored resume" : "Match of your base resume (no tailored resume yet)"}">${matchOf(j)}${j.resumeFit ? "" : "*"}</span>` : ""}
         ${j.posting?.state === "closed" && j.status !== "closed" ? `<span class="chip no">Posting closed</span>` : ""}
@@ -248,7 +309,7 @@ function renderDetail() {
   if (!j) {
     root.innerHTML = S.jobs.length ? `<div class="panel"><p class="hint">Pick a job from the list.</p></div>` : `<div class="panel">
       <h2>How a job moves through the desk</h2>
-      <p class="hint">Each posting is labeled <span class="chip dot yes">English friendly</span>, <span class="chip dot mixed">English OK, German a plus</span> or <span class="chip dot no">German required</span>, with the CEFR level the posting asks for. English-friendly jobs get a resume rewritten from yours to match the requirements.</p>
+      <p class="hint">Each posting is labeled by whether you can do the job with your languages (English and French fluent, German basic): <span class="chip dot yes">${ENGLISH.yes}</span>, <span class="chip dot mixed">${ENGLISH.mixed}</span> or <span class="chip dot no">${ENGLISH.no}</span>, with the CEFR level for German postings. Jobs you can do get a resume rewritten from yours to match the requirements.</p>
     </div>`;
     return;
   }
@@ -267,7 +328,10 @@ function renderDetail() {
       <div class="row" style="justify-content:space-between"><span class="v">${ENGLISH[a.english || j.english]}</span>${showLvl ? cefr : ""}</div>
       ${j.myLabel && a.english && j.myLabel !== a.english ? `<p class="hint">This is the AI's label. You labeled it <b>${ENGLISH[j.myLabel]}</b>, and the desk uses your label.</p>` : ""}
       ${a.reason ? `<p>${esc(a.reason)}</p>` : ""}
-      ${a.germanRequirement ? `<p class="hint">German: ${esc(a.germanRequirement)}${showLvl ? ` (${esc(lvl)})` : ""} · Posting written in ${a.postingLanguage === "de" ? "German" : a.postingLanguage === "en" ? "English" : "another language"}</p>` : ""}
+      ${a.germanRequirement || a.otherLanguage ? `<p class="hint">${[
+        a.germanRequirement && (a.germanRequirement !== "not mentioned" || a.country === "Germany" || a.postingLanguage === "de" || !a.country) ? `German: ${esc(a.germanRequirement)}${showLvl ? ` (${esc(lvl)})` : ""}` : "",
+        a.otherLanguage ? `Other language: ${esc(a.otherLanguage)}` : "",
+        a.postingLanguage ? `Posting written in ${LANG_NAME[a.postingLanguage] || "another language"}` : ""].filter(Boolean).join(" · ")}</p>` : ""}
     </div>`;
   else verdict = `<div class="verdict"><p>Not analyzed yet.</p><div class="row"><button class="btn primary small" data-act="analyze">Analyze job</button></div></div>`;
 
@@ -362,13 +426,13 @@ Leave an empty line between paragraphs.</pre></details>`
         : `<div class="paper"><div class="cv">${md(j.resume)}</div></div>`}
       ${j.resumeNotes && !editing ? `<div class="notes"><span class="label">What changed and gaps to cover</span>${md(j.resumeNotes)}</div>` : ""}`;
   } else if (!canWrite && j.english) {
-    cv = `<p class="hint">No resume written: this posting needs German. ${hasBase ? `<button class="btn small" data-act="generate">Write one anyway</button>` : ""}</p>`;
+    cv = `<p class="hint">No resume written: this posting needs ${esc(a.germanRequirement === "required" ? "German" : a.otherLanguage || "a language you don't have at working level")}. ${hasBase ? `<button class="btn small" data-act="generate">Write one anyway</button>` : ""}</p>`;
   } else if (!hasBase) {
     cv = `<p class="hint">Save your base resume first, then write a tailored version here.</p><div class="row"><button class="btn" data-act="openbase">Add base resume</button></div>`;
   } else if (j.english) {
     cv = `<div class="row"><button class="btn primary" data-act="generate">Write tailored resume</button></div>`;
   } else {
-    cv = `<p class="hint">The tailored resume appears here once the job is labeled English friendly.</p>`;
+    cv = `<p class="hint">The tailored resume appears here once the job is labeled ${ENGLISH.yes}.</p>`;
   }
 
   root.innerHTML = `
@@ -381,6 +445,7 @@ Leave an empty line between paragraphs.</pre></details>`
         <h2>${esc(j.title || a.title || "Untitled posting")}</h2>
         <div class="co">${esc([j.company || a.company, a.location].filter(Boolean).join(" · "))}
           ${j.url ? ` · <a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(hostOf(j.url) || "posting")} ↗</a>` : ""}</div>
+        ${placeLine(j)}
         ${postingLine(j)}
       </div>
       ${S.err[j.id] ? `<p class="err">${esc(S.err[j.id])}</p>` : ""}
@@ -388,7 +453,7 @@ Leave an empty line between paragraphs.</pre></details>`
       <div class="row">
         <span class="label" title="Your own judgment. It decides the label in the desk, and the Evaluation panel compares it with the AI's.">My label</span>
         <div class="seg" role="group" aria-label="My label">
-          ${LABELS.map((k) => `<button type="button" data-mine="${k}" aria-pressed="${j.myLabel === k}">${k === "yes" ? "English" : k === "mixed" ? "German a plus" : "German required"}</button>`).join("")}
+          ${LABELS.map((k) => `<button type="button" data-mine="${k}" aria-pressed="${j.myLabel === k}" title="${ENGLISH[k]}">${MY_LABEL[k]}</button>`).join("")}
         </div>
         ${j.myLabel && a.english && !hideAi(j) ? `<span class="hint">AI said: ${esc(ENGLISH[a.english])}${a.english === j.myLabel ? " ✓" : ""}</span>` : ""}
         ${j.english && !busy ? `<button class="btn ghost small" data-act="analyze">Re-analyze</button>` : ""}
@@ -507,6 +572,7 @@ document.addEventListener("click", async (ev) => {
   }
   if (t.id === "eval-close") { $("#eval-panel").hidden = true; return; }
   if (t.id === "check-postings") return checkAllPostings(t);
+  if (t.id === "clear-place") { setPlace({ country: "all", city: "all", remote: "any" }); return; }
   if (t.id === "base-save") {
     const v = $("#base-text").value.trim();
     if (v.length < 200) return toast("That looks too short for a full resume.");
@@ -589,9 +655,17 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
+function setPlace(next) {
+  Object.assign(S, next);
+  store.set("mad-country", S.country); store.set("mad-city", S.city); store.set("mad-remote", S.remote);
+  renderPipeline(); renderList();
+}
 document.addEventListener("change", (ev) => {
   if (ev.target.id === "blind-mode") { S.blind = ev.target.checked; store.set("mad-blind", S.blind ? "1" : "0"); render(); return; }
   if (ev.target.id === "sort-by") { S.sort = ev.target.value; store.set("mad-sort", S.sort); renderList(); return; }
+  if (ev.target.id === "f-country") { setPlace({ country: ev.target.value, city: "all" }); return; }
+  if (ev.target.id === "f-city") { setPlace({ city: ev.target.value }); return; }
+  if (ev.target.id === "f-remote") { setPlace({ remote: ev.target.value }); return; }
   const id = ev.target.dataset?.status; if (!id) return;
   const status = ev.target.value, j = job(id);
   const data = { status };
@@ -612,6 +686,7 @@ $("#add-form").addEventListener("submit", async (ev) => {
     const j = await api("POST", "/api/jobs", { url, description });
     upsert(j); S.sel = j.id;
     if (S.filter !== "all" && S.filter !== "todo") S.filter = "all";
+    if (placeFiltered()) setPlace({ country: "all", city: "all", remote: "any" });  // a new job has no location yet
     $("#job-url").value = ""; $("#job-text").value = "";
     analyze(j.id);
   } catch (e) {
@@ -623,6 +698,9 @@ $("#add-form").addEventListener("submit", async (ev) => {
 /* ---------- boot ---------- */
 S.filter = store.get("mad-filter") || "all";
 S.sort = store.get("mad-sort") || "match";
+S.country = store.get("mad-country") || "all";
+S.city = store.get("mad-city") || "all";
+S.remote = REMOTE.some((r) => r[0] === store.get("mad-remote")) ? store.get("mad-remote") : "any";
 render();
 (async () => {
   try {
