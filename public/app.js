@@ -3,8 +3,8 @@ import { LABELS, labelPairs, scoreLabels } from "./eval.js";
 
 const STATUS = { new: "To apply", applied: "Applied", interview: "Interviewing", offer: "Offer", rejected: "Rejected", skipped: "Skipped", closed: "Posting closed" };
 // The language label: can the candidate do the job in English or French? (Values stay yes/mixed/no for older jobs.)
-const ENGLISH = { yes: "Language OK", mixed: "Local language a plus", no: "Local language required" };
-const MY_LABEL = { yes: "Language OK", mixed: "Local a plus", no: "Local required" };
+const ENGLISH = { yes: "Language OK", mixed: "Language a plus", no: "Language required" };
+const MY_LABEL = { yes: "Language OK", mixed: "Language a plus", no: "Language required" };
 const MODE = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work mode not stated" };
 const REMOTE = [["any", "Any work mode"], ["remote", "Remote only"], ["flex", "Remote or hybrid"]];
 // The candidate's two job tracks (analysis.track): the filter's labels and the short chip on each job.
