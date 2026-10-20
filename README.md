@@ -9,7 +9,8 @@ A local web app for a job search across countries: Germany, other EU countries, 
 5. **writes a tailored, ATS-friendly resume** from your base resume, without inventing experience, and notes the gaps to cover in a cover letter,
 6. **makes an A4 PDF** of every tailored resume automatically,
 7. **checks whether postings are still open:** once a day automatically, or with **Check postings**. Jobs you haven't applied to move to *Posting closed* when the employer closes them,
-8. **tracks the application:** applied date, replies (interview, rejection, offer), response rate, and a follow-up reminder after 14 days without an answer.
+8. **prepares the application folder:** **Application folder** on the tailored resume copies its PDF to `applied/<Company>/` and writes a one-page cover letter (HTML and PDF) from your resume, without inventing anything. A folder you made earlier for the same company is reused, and a cover letter already in the folder is kept unless you click **Rewrite cover letter**,
+9. **tracks the application:** applied date, replies (interview, rejection, offer), response rate, and a follow-up reminder after 14 days without an answer.
 
 Everything runs on your own machine. Your resume and application data never leave it, except for the text sent to Claude for analysis.
 
@@ -75,6 +76,7 @@ Example: `CLAUDE_MODEL=sonnet npm start`
 | --- | --- | --- |
 | `data/db.json` | Base resume, jobs, analyses, tailored resumes, replies | No (`.gitignore`) |
 | `resumes/` | Generated PDFs, e.g. `Firstname-Lastname_Resume_Company.pdf` | No (`.gitignore`) |
+| `applied/` | One folder per company: the resume you sent and the cover letter | No (`.gitignore`) |
 
 Back up `data/db.json` by copying it somewhere safe.
 

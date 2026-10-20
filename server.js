@@ -4,13 +4,14 @@
 
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, copyFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cvHtml, cvName, cvTitle } from "./public/cv.js";
+import { pickFolder, letterHead, letterFiles, letterHtml } from "./letter.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(ROOT, "data");
@@ -18,6 +19,7 @@ const DB_FILE = path.join(DATA_DIR, "db.json");
 const PORT = Number(process.env.PORT || 4317);
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const RESUMES_DIR = path.join(ROOT, "resumes");
+const APPLIED_DIR = path.join(ROOT, "applied");
 const GOTENBERG_URL = (process.env.GOTENBERG_URL || "http://localhost:3000").replace(/\/$/, "");
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || ""; // e.g. "sonnet"; empty = your Claude Code default
 
@@ -298,14 +300,59 @@ async function scoreResume(job) {
   return job;
 }
 
+// The candidate's own letters, used as style examples. Kept in data/ (private, not in git); optional.
+const LETTER_EXAMPLES = path.join(DATA_DIR, "letter-examples.md");
+
+async function coverLetterPrompt(job) {
+  const a = job.analysis || {};
+  const examples = existsSync(LETTER_EXAMPLES) ? (await readFile(LETTER_EXAMPLES, "utf8")).slice(0, 12000) : "";
+  return `Write a cover letter for the job below, from the candidate whose tailored resume is given. The tailored resume is what will be sent with it.${examples ? " Write it the way the candidate writes: the examples at the end are letters the candidate wrote." : ""}
+
+How the candidate writes:
+- Plain, warm and conversational, in the first person, with contractions (I'm, I'd, that's). Short, clear sentences. No corporate phrases ("I am writing to apply", "passionate", "dynamic", "team player", "constant thread", "round out", "leverage").
+- 180-280 words in total (count them), in 4 or 5 short paragraphs.
+- Opening: one concrete picture of what the company's work means in the real world (a kitchen waiting for a spare part, doctors spending less time on systems), then one sentence on what the candidate enjoys about that kind of work. Or open with who the candidate is as an engineer and what they like doing.
+- Proof: one main story from the resume, told with a few specific details and its real result (for example the self-service app that cut manual support requests by 60%), plus at most one or two short extra examples. Don't go through the whole resume.
+- Link: say in one or two sentences why the company needs exactly that ("Software that runs in hospitals needs exactly that care, and I'd love to bring it to ..."). If there is a clear gap, say it in one honest sentence and look forward ("My frontend experience is in Angular rather than React, and I'm looking forward to picking up React as part of your team.").
+- Optionally one short paragraph on why the company's mission appeals to the candidate.
+- Close with one line inviting a conversation, such as "I'd be glad to talk about how I can help."
+
+Rules:
+- Never invent anything: use only experience, numbers, tools, learning and plans that the resumes below state. If the resume doesn't say the candidate is learning a tool, don't say so.
+- Describe each responsibility at the level the resume gives it: if the resume says "maintained", don't write "owned", "led" or "designed"; don't claim skills or tasks (such as defining KPIs) that the resume doesn't state.
+- Don't mention where the candidate lives, relocation, commuting, office days, salary, notice period, visa or availability.
+- Greeting: "Hello <first name> and the <Company> team," if the posting names the hiring contact; otherwise "Hello <Company> team,".
+- Subject: "Application: " followed by the exact job title from the posting.
+
+Return only JSON, no other text:
+{"subject": "...", "greeting": "...", "paragraphs": ["...", "..."]}
+
+JOB: ${job.title || a.title || ""} at ${job.company || a.company || ""}${a.city ? `, ${a.city}` : ""}
+
+JOB POSTING:
+${(job.description || "").slice(0, 15000)}
+
+GAPS NOTED WHEN THE RESUME WAS TAILORED:
+${(job.resumeNotes || "(none)").slice(0, 4000)}
+
+TAILORED RESUME:
+${job.resume.slice(0, 15000)}
+
+BASE RESUME (for facts only; prefer what the tailored resume says):
+${(db.profile.resume || "").slice(0, 20000)}${examples ? `
+
+THE CANDIDATE'S OWN LETTERS (style only; their facts may be out of date):
+${examples}` : ""}`;
+}
+
 /* ---------------- PDF via Gotenberg ---------------- */
 
-async function renderPdf(job) {
+async function htmlToPdf(html, metadata) {
   const form = new FormData();
-  form.append("files", new Blob([cvHtml(job)], { type: "text/html" }), "index.html");
+  form.append("files", new Blob([html], { type: "text/html" }), "index.html");
   form.append("preferCssPageSize", "true");
   form.append("printBackground", "true");
-  form.append("metadata", JSON.stringify({ Title: cvTitle(job), Author: (job.resume.match(/^#\s+(.+)$/m) || [])[1] || "", Subject: `Resume for ${job.title || "job application"}`, Keywords: (job.analysis?.keywords || []).slice(0, 15) }));
+  form.append("metadata", JSON.stringify(metadata));
   let res;
   try {
     res = await fetch(`${GOTENBERG_URL}/forms/chromium/convert/html`, { method: "POST", body: form, signal: AbortSignal.timeout(60000) });
@@ -313,9 +360,14 @@ async function renderPdf(job) {
     throw new Error("Gotenberg isn't running. Start it with: docker start gotenberg");
   }
   if (!res.ok) throw new Error(`Gotenberg couldn't make the PDF (${res.status}).`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function renderPdf(job) {
+  const pdf = await htmlToPdf(cvHtml(job), { Title: cvTitle(job), Author: (job.resume.match(/^#\s+(.+)$/m) || [])[1] || "", Subject: `Resume for ${job.title || "job application"}`, Keywords: (job.analysis?.keywords || []).slice(0, 15) });
   let name = `${cvName(job)}.pdf`;
   if (db.jobs.some((j) => j.id !== job.id && j.pdfFile === name)) name = `${cvName(job)}_${job.id.slice(0, 6)}.pdf`;
-  await writeFile(path.join(RESUMES_DIR, name), Buffer.from(await res.arrayBuffer()));
+  await writeFile(path.join(RESUMES_DIR, name), pdf);
   Object.assign(job, { pdfFile: name, pdfAt: Date.now(), pdfError: "" });
   await persist();
   return name;
@@ -649,6 +701,46 @@ const routes = {
     busy.add(id);
     try { return await scoreResume(job); }
     catch (e) { throw e instanceof SyntaxError ? new Error("The score came back malformed. Try again.") : e; }
+    finally { busy.delete(id); }
+  },
+
+  // applied/<Company>/: a copy of the tailored resume PDF and a cover letter (HTML + PDF).
+  // An existing letter is kept unless { rewrite: true }, so edits made by hand are never lost.
+  async "POST /api/jobs/:id/application"(req, id) {
+    const job = findJob(id);
+    if (!job) throw Object.assign(new Error("Job not found."), { status: 404 });
+    if (!job.resume) throw Object.assign(new Error("Write the tailored resume first."), { status: 400 });
+    if (busy.has(id)) throw Object.assign(new Error("Already working on this job."), { status: 409 });
+    const { rewrite = false } = await body(req);
+    busy.add(id);
+    try {
+      await mkdir(APPLIED_DIR, { recursive: true });
+      const existing = (await readdir(APPLIED_DIR, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
+      const folder = job.application?.folder || pickFolder(job.company || job.analysis?.company, existing);
+      const dir = path.join(APPLIED_DIR, folder);
+      await mkdir(dir, { recursive: true });
+
+      const cv = job.pdfFile && path.join(RESUMES_DIR, job.pdfFile);
+      if (!cv || !existsSync(cv) || (job.pdfAt || 0) < (job.resumeChangedAt || job.resumeAt || 0)) await renderPdf(job);
+      const head = letterHead(job.resume);
+      const files = letterFiles(head.name, folder);
+      await copyFile(path.join(RESUMES_DIR, job.pdfFile), path.join(dir, files.resume));
+
+      const hasLetter = existsSync(path.join(dir, files.html));
+      if (rewrite || !hasLetter) {
+        const letter = parseJson(await askClaude(await coverLetterPrompt(job)));
+        if (!Array.isArray(letter.paragraphs) || !letter.paragraphs.length) throw new SyntaxError("no paragraphs");
+        const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        const html = letterHtml({ head, company: job.company || "", city: job.analysis?.city || "", date, letter });
+        await writeFile(path.join(dir, files.html), html);
+        await writeFile(path.join(dir, files.pdf), await htmlToPdf(html, { Title: `${head.name} - Cover Letter - ${job.company || ""}`, Author: head.name, Subject: letter.subject }));
+        job.application = { folder, at: Date.now(), letterAt: Date.now(), letterPdf: files.pdf };
+      } else {
+        job.application = { ...(job.application || {}), folder, at: Date.now(), letterAt: job.application?.letterAt || null };
+      }
+      await persist();
+      return job;
+    } catch (e) { throw e instanceof SyntaxError ? new Error("The cover letter came back malformed. Try again.") : e; }
     finally { busy.delete(id); }
   },
 };

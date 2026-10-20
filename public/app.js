@@ -414,9 +414,13 @@ function renderDetail() {
             : `<button class="btn primary small" data-act="pdf">Download PDF</button>
                <button class="btn small" data-act="edit">Edit</button>
                <button class="btn small" data-act="copy">Copy text</button>
-               <button class="btn small" data-act="generate">Rewrite</button>`}
+               <button class="btn small" data-act="generate">Rewrite</button>
+               <button class="btn small" data-act="application" title="Copy this resume into applied/${esc(j.application?.folder || j.company || "")}/ and write a cover letter">${j.application ? "Update application folder" : "Application folder"}</button>`}
         </div>
       </div>
+      ${busy === "letter" ? `<p class="hint"><span class="thinking">Saving the resume and writing the cover letter… this takes about 30–60 seconds.</span></p>`
+        : j.application && !editing ? `<p class="hint">Folder: <code>applied/${esc(j.application.folder)}/</code> · resume copied ${esc(fmtDate(j.application.at))}${j.application.letterAt ? ` · cover letter written ${esc(fmtDate(j.application.letterAt))}` : " · kept the cover letter already in the folder"}
+          <button class="btn ghost small ${S.armed === "letter:" + j.id ? "armed" : ""}" data-act="rewriteletter">${S.armed === "letter:" + j.id ? "Click again to replace it" : "Rewrite cover letter"}</button></p>` : ""}
       ${j.pdfError && !editing ? `<p class="err">PDF not made: ${esc(j.pdfError)}</p>` : ""}
       ${editing ? `<p class="hint"><span id="cv-dirty">No changes yet</span> · The preview on the right updates as you type. Save (or press ⌘S) to keep your changes and rebuild the PDF.</p>
         <div class="cv-split">
@@ -530,6 +534,18 @@ async function generate(id) {
   delete S.busy[id]; render();
 }
 
+// applied/<Company>/: the resume PDF plus a cover letter. An existing letter is only replaced on "Rewrite cover letter".
+async function prepareApplication(id, rewrite) {
+  if (S.busy[id]) return;
+  S.busy[id] = "letter"; delete S.err[id]; render();
+  try {
+    const j = await api("POST", `/api/jobs/${id}/application`, { rewrite });
+    upsert(j);
+    toast(`Saved in applied/${j.application.folder}/` + (rewrite || j.application.letterAt >= j.application.at - 1000 ? " · cover letter written" : " · your cover letter was kept"));
+  } catch (e) { S.err[id] = e.message; }
+  delete S.busy[id]; render();
+}
+
 /* ---------- posting checks ---------- */
 async function checkAllPostings(btn) {
   if (S.checking) return;
@@ -602,7 +618,7 @@ document.addEventListener("click", async (ev) => {
     return patch(j.id, { responses: rs });
   }
   const act = t.dataset.act; if (!act) return;
-  if (act !== "delete") S.armed = null;
+  if (act !== "delete" && act !== "rewriteletter") S.armed = null;
   switch (act) {
     case "checkposting": {
       S.checkingOne = j.id; render();
@@ -624,6 +640,10 @@ document.addEventListener("click", async (ev) => {
       catch (e) { S.err[j.id] = e.message; }
       delete S.busy[j.id]; render(); break;
     }
+    case "application": prepareApplication(j.id, false); break;
+    case "rewriteletter":
+      if (S.armed !== "letter:" + j.id) { S.armed = "letter:" + j.id; render(); break; }
+      S.armed = null; prepareApplication(j.id, true); break;
     case "analyze": analyze(j.id); break;
     case "generate": generate(j.id); break;
     case "applied": await patch(j.id, { status: "applied", appliedAt: Date.now() }); toast("Marked as applied"); break;
