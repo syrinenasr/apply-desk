@@ -148,6 +148,7 @@ function resumePrompt(job) {
 Rules:
 - Write in English.
 - In the notes, address the candidate as "you".
+- In the resume itself, never use "you", "your", "I", "my" or "me", including in the summary. Write the summary in the usual resume style without a subject, e.g. "Data engineer with 4 years ..., building ...".
 - Never invent anything: no employer, title, date, degree, certification, number, tool or skill the base resume does not support. You may reword, reorder, emphasize, merge, condense and drop less relevant items.
 - Use the posting's own terms where they truthfully describe the candidate's experience, so an ATS keyword scan matches.
 - Open with a 2-3 sentence profile aimed at this role.
