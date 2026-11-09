@@ -4,7 +4,7 @@ A local web app for a job search across countries: Germany, other EU countries, 
 
 1. **reads the posting** (LinkedIn, StepStone, Personio, Greenhouse and most career pages),
 2. **labels the language requirement** against the candidate's languages (English and French fluent, German basic): *Language OK* (workable in English or French), *Language a plus* or *Language required* (another language such as German, Dutch or Spanish is a plus or required), with the CEFR level for German postings (A1–C2),
-3. **reads the location:** city, country, work mode (*remote*, *hybrid*, *on-site*, or not stated) and any explicit visa-sponsorship or right-to-work line, and sorts the job into a track: *AI, Data & BI* or *Java, Angular & Software*,
+3. **reads the location:** city, country, work mode (*remote*, *hybrid*, *on-site*, or not stated) any explicit visa-sponsorship or right-to-work line, and the salary when the posting states one (highlighted in gold in the list), and sorts the job into a track: *AI, Data & BI* or *Java, Angular & Software*,
 4. **scores the match** against your base resume and lists the key requirements and keywords,
 5. **writes a tailored, ATS-friendly resume** from your base resume, without inventing experience, and notes the gaps to cover in a cover letter,
 6. **makes an A4 PDF** of every tailored resume automatically,

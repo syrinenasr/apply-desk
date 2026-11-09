@@ -76,6 +76,8 @@ function inPlace(j, { country = S.country, city = S.city, remote = S.remote, tra
   return true;
 }
 const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any" || S.track !== "all";
+// The pay the posting states (analysis.salary), highlighted wherever the job appears.
+const salaryChip = (j) => (j.analysis?.salary ? `<span class="chip salary" title="Salary stated in the posting">${esc(j.analysis.salary)}</span>` : "");
 const trackChip = (j) => { const t = j.analysis?.track; return TRACK_CHIP[t] ? `<span class="chip tr-${t}" title="Track: ${esc(TRACKS.find((x) => x[0] === t)[1])}">${TRACK_CHIP[t]}</span>` : ""; };
 // Distinct values with counts, most common first ("" is left out).
 function tally(list, key) {
@@ -118,10 +120,12 @@ function placeLine(j) {
   const where = [p.city, p.country].filter(Boolean).join(", ");
   const permit = p.permit === "sponsorship offered" ? `<span class="chip yes" title="The posting offers visa sponsorship">Visa sponsorship offered</span>`
     : p.permit === "right to work required" ? `<span class="chip no" title="The posting asks for an existing right to work there">Right to work required</span>` : "";
+  const pay = "salary" in a ? salaryChip(j)
+    : S.busy[j.id] ? "" : `<button class="btn ghost small" data-act="extras" title="Ask Claude whether the posting states a salary">Check salary</button>`;
   return `<div class="row place" style="gap:6px">
     ${where ? `<span class="chip" title="Location">${esc(where)}</span>` : ""}
     <span class="chip ${p.mode === "remote" || p.mode === "hybrid" ? `mode-${p.mode}` : ""}">${MODE[p.mode] || MODE.unknown}</span>
-    ${permit}</div>`;
+    ${permit}${pay}</div>`;
 }
 function postingLine(j) {
   const p = j.posting || {};
@@ -292,6 +296,7 @@ function renderList() {
           : j.english ? `<span class="chip dot ${j.english}">${ENGLISH[j.english]}</span>${j.myLabel ? `<span class="chip" title="Labeled by you">✓ you</span>` : ""}` : `<span class="chip">Not labeled</span>`}
         <span class="chip st-${j.status}">${STATUS[j.status] || j.status}</span>
         ${trackChip(j)}
+        ${salaryChip(j)}
         ${a.workMode === "remote" || a.workMode === "hybrid" ? `<span class="chip mode-${a.workMode}">${MODE[a.workMode]}</span>` : ""}
         ${yearsInfo(j) && yearsInfo(j).cls ? `<span class="chip ${yearsInfo(j).cls}" title="${esc(yearsInfo(j).text)}">${esc(yearsInfo(j).short)}</span>` : ""}
         ${matchOf(j) !== null ? `<span class="match" title="${j.resumeFit ? "Match of your tailored resume" : "Match of your base resume (no tailored resume yet)"}">${matchOf(j)}${j.resumeFit ? "" : "*"}</span>` : ""}
