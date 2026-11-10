@@ -66,8 +66,25 @@ const placeOf = (j) => {
   return { city: a.city || "", country: a.country || "", mode: a.workMode || "unknown", permit: a.workPermit || "" };
 };
 const placeText = (j) => { const p = placeOf(j); return p.city || p.country ? [p.city, p.country].filter(Boolean).join(", ") : (j.analysis?.location || ""); };
-function inPlace(j, { country = S.country, city = S.city, remote = S.remote, track = S.track } = {}) {
+// Company grouping key: "Sport Alliance GmbH" and "sport alliance" → "sport alliance" ("" when unknown). Same legal forms as letter.js.
+const LEGAL_FORMS = /\b(GmbH|AG|SE|KG|KGaA|e\.?\s?V|Ltd|Limited|Inc|LLC|plc|S\.?A\.?S?|SARL|B\.?V|N\.?V|Co)\b\.?/gi;
+const companyOf = (j) => String(j.company || j.analysis?.company || "").trim();
+const companyKey = (j) => {
+  const name = companyOf(j).toLowerCase();
+  return name.replace(LEGAL_FORMS, "").replace(/[\s,.&+-]+$/, "").replace(/\s+/g, " ").trim() || name;
+};
+// Each company key's most common spelling (the shorter one on a tie), for the filter's labels.
+function companyNames() {
+  const n = {};
+  for (const j of S.jobs) {
+    const k = companyKey(j), c = companyOf(j);
+    if (k) { n[k] ||= {}; n[k][c] = (n[k][c] || 0) + 1; }
+  }
+  return Object.fromEntries(Object.entries(n).map(([k, v]) => [k, Object.entries(v).sort((x, y) => y[1] - x[1] || x[0].length - y[0].length)[0][0]]));
+}
+function inPlace(j, { country = S.country, city = S.city, remote = S.remote, track = S.track, company = S.company } = {}) {
   const p = placeOf(j);
+  if (company !== "all" && companyKey(j) !== company) return false;
   if (track !== "all" && j.analysis?.track !== track) return false;
   if (country !== "all" && p.country !== country) return false;
   if (city !== "all" && p.city !== city) return false;
@@ -75,14 +92,14 @@ function inPlace(j, { country = S.country, city = S.city, remote = S.remote, tra
   if (remote === "flex" && p.mode !== "remote" && p.mode !== "hybrid") return false;
   return true;
 }
-const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any" || S.track !== "all";
+const placeFiltered = () => S.country !== "all" || S.city !== "all" || S.remote !== "any" || S.track !== "all" || S.company !== "all";
 // The pay the posting states (analysis.salary), highlighted wherever the job appears.
 const salaryChip = (j) => (j.analysis?.salary ? `<span class="chip salary" title="Salary stated in the posting">${esc(j.analysis.salary)}</span>` : "");
 const trackChip = (j) => { const t = j.analysis?.track; return TRACK_CHIP[t] ? `<span class="chip tr-${t}" title="Track: ${esc(TRACKS.find((x) => x[0] === t)[1])}">${TRACK_CHIP[t]}</span>` : ""; };
-// Distinct values with counts, most common first ("" is left out).
+// Distinct values with counts, most common first ("" is left out). key: a placeOf field or a function of the job.
 function tally(list, key) {
   const n = {};
-  for (const j of list) { const v = placeOf(j)[key]; if (v) n[v] = (n[v] || 0) + 1; }
+  for (const j of list) { const v = typeof key === "function" ? key(j) : placeOf(j)[key]; if (v) n[v] = (n[v] || 0) + 1; }
   return Object.entries(n).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
 }
 const isClosed = (j) => j.status === "rejected" || j.status === "skipped" || j.status === "closed";
@@ -265,6 +282,8 @@ function renderList() {
   const cities = withCur(tally(inStageNow.filter((j) => inPlace(j, { city: "all" })), "city"), S.city);
   const remoteN = (r) => inStageNow.filter((j) => inPlace(j, { remote: r })).length;
   const trackN = (t) => inStageNow.filter((j) => inPlace(j, { track: t })).length;
+  const names = companyNames();
+  const companies = withCur(tally(inStageNow.filter((j) => inPlace(j, { company: "all" })), companyKey), S.company);
   const sortBar = `<div class="listbar">
     <div class="lb-row"><label class="label" for="sort-by">Sort</label>
       <select id="sort-by"><option value="match"${S.sort !== "newest" ? " selected" : ""}>Best match (language OK first)</option><option value="newest"${S.sort === "newest" ? " selected" : ""}>Newest first</option></select></div>
@@ -273,12 +292,13 @@ function renderList() {
       ${countries.length > 1 || S.country !== "all" ? `<select id="f-country" aria-label="Country">${opt("all", "All countries", S.country)}${countries.map(([v, n]) => opt(v, `${v} (${n})`, S.country)).join("")}</select>` : ""}
       <select id="f-city" aria-label="City">${opt("all", "All cities", S.city)}${cities.map(([v, n]) => opt(v, `${v} (${n})`, S.city)).join("")}</select>
       <select id="f-remote" aria-label="Work mode">${REMOTE.map(([v, l]) => opt(v, v === "any" ? l : `${l} (${remoteN(v)})`, S.remote)).join("")}</select>
+      <select id="f-company" aria-label="Company">${opt("all", "All companies", S.company)}${companies.map(([v, n]) => opt(v, `${names[v] || v} (${n})`, S.company)).join("")}</select>
     </div>
   </div>`;
   if (!items.length) {
     const stage = esc(STAGES.find((s) => s[0] === S.filter)[1]);
     el.innerHTML = sortBar + rateRow + (placeFiltered() && inStageNow.length
-      ? `<div class="empty"><span>No jobs in “${stage}” match these filters${[S.track !== "all" && TRACKS.find((t) => t[0] === S.track)[1], S.city !== "all" && S.city, S.country !== "all" && S.country, S.remote !== "any" && REMOTE.find((r) => r[0] === S.remote)[1].toLowerCase()].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}.</span>
+      ? `<div class="empty"><span>No jobs in “${stage}” match these filters${[S.track !== "all" && TRACKS.find((t) => t[0] === S.track)[1], S.company !== "all" && (names[S.company] || S.company), S.city !== "all" && S.city, S.country !== "all" && S.country, S.remote !== "any" && REMOTE.find((r) => r[0] === S.remote)[1].toLowerCase()].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}.</span>
           <div class="row"><button class="btn small" type="button" id="clear-place">Clear filters</button></div></div>`
       : `<div class="empty">Nothing in “${stage}”.</div>`);
     return;
@@ -601,7 +621,7 @@ document.addEventListener("click", async (ev) => {
   }
   if (t.id === "eval-close") { $("#eval-panel").hidden = true; return; }
   if (t.id === "check-postings") return checkAllPostings(t);
-  if (t.id === "clear-place") { setPlace({ country: "all", city: "all", remote: "any", track: "all" }); return; }
+  if (t.id === "clear-place") { setPlace({ country: "all", city: "all", remote: "any", track: "all", company: "all" }); return; }
   if (t.id === "base-save") {
     const v = $("#base-text").value.trim();
     if (v.length < 200) return toast("That looks too short for a full resume.");
@@ -690,7 +710,7 @@ document.addEventListener("click", async (ev) => {
 
 function setPlace(next) {
   Object.assign(S, next);
-  store.set("mad-country", S.country); store.set("mad-city", S.city); store.set("mad-remote", S.remote); store.set("mad-track", S.track);
+  store.set("mad-country", S.country); store.set("mad-city", S.city); store.set("mad-remote", S.remote); store.set("mad-track", S.track); store.set("mad-company", S.company);
   renderPipeline(); renderList();
 }
 document.addEventListener("change", (ev) => {
@@ -700,6 +720,7 @@ document.addEventListener("change", (ev) => {
   if (ev.target.id === "f-city") { setPlace({ city: ev.target.value }); return; }
   if (ev.target.id === "f-remote") { setPlace({ remote: ev.target.value }); return; }
   if (ev.target.id === "f-track") { setPlace({ track: ev.target.value }); return; }
+  if (ev.target.id === "f-company") { setPlace({ company: ev.target.value }); return; }
   const id = ev.target.dataset?.status; if (!id) return;
   const status = ev.target.value, j = job(id);
   const data = { status };
@@ -720,7 +741,7 @@ $("#add-form").addEventListener("submit", async (ev) => {
     const j = await api("POST", "/api/jobs", { url, description });
     upsert(j); S.sel = j.id;
     if (S.filter !== "all" && S.filter !== "todo") S.filter = "all";
-    if (placeFiltered()) setPlace({ country: "all", city: "all", remote: "any", track: "all" });  // a new job has no location or track yet
+    if (placeFiltered()) setPlace({ country: "all", city: "all", remote: "any", track: "all", company: "all" });  // a new job has no location, track or company yet
     $("#job-url").value = ""; $("#job-text").value = "";
     analyze(j.id);
   } catch (e) {
@@ -736,6 +757,7 @@ S.country = store.get("mad-country") || "all";
 S.city = store.get("mad-city") || "all";
 S.remote = REMOTE.some((r) => r[0] === store.get("mad-remote")) ? store.get("mad-remote") : "any";
 S.track = TRACKS.some((t) => t[0] === store.get("mad-track")) ? store.get("mad-track") : "all";
+S.company = store.get("mad-company") || "all";
 render();
 (async () => {
   try {

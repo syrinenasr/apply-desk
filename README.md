@@ -16,9 +16,10 @@ Everything runs on your own machine. Your resume and application data never leav
 
 ## Filtering the list
 
-The stage strip (All jobs, To apply, Waiting, ...) picks the stage. Above the list, next to **Sort**, the track and location filters narrow it further:
+The stage strip (All jobs, To apply, Waiting, ...) picks the stage. Above the list, next to **Sort**, the track, location and company filters narrow it further:
 
 - **Country** (shown once jobs from more than one country are on the desk) and **City**, each listing the values with their job counts, most common first. Picking a country narrows the city list.
+- **Company:** one company's jobs, listed with job counts like the location filters. Spellings that differ only in case or a legal form ("Sport Alliance" and "Sport Alliance GmbH") count as one company; jobs with no company name only show under *All companies*.
 - **Work mode:** *Any*, *Remote only*, or *Remote or hybrid*.
 - **Track:** *All tracks*, *AI, Data & BI* (data engineering, analytics engineering, BI, data analysis, ML/AI) or *Java, Angular & Software* (backend, full stack, frontend, Java/Spring, Angular). The analysis sets each job's track; a role that mixes both gets the one that matches most of its day-to-day work. Each job shows its track as a chip in the list and on the job page.
 
